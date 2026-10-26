@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#d71920">
+  <title>FireMap</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23d71920'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23fff' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='3.5' fill='%23fff'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap">
+  <style>
+   
+    #boot-msg{display:none;max-width:560px;margin:12vh auto;padding:0 24px;font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;color:#1c1f24}
+    #boot-msg h1{font-size:24px;margin:0 0 8px;color:#d71920}
+    #boot-msg code,#boot-msg pre{background:#f1f2f4;border-radius:6px;font:14px ui-monospace,Consolas,monospace}
+    #boot-msg code{padding:1px 6px}#boot-msg pre{padding:12px 14px;overflow:auto}
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <div id="boot-msg" role="alert"></div>
+  <noscript><p style="font:16px system-ui;padding:24px">O FireMap precisa de JavaScript habilitado para funcionar.</p></noscript>
+
+  <script>
+    // Script comum (não-módulo): roda mesmo quando o módulo do app falha ao carregar.
+    (function () {
+      var box = document.getElementById('boot-msg');
+      function show(html) { document.getElementById('root').style.display = 'none'; box.innerHTML = html; box.style.display = 'block'; }
+      if (location.protocol === 'file:') {
+        show('<h1>Abra o FireMap por um servidor</h1>' +
+          '<p>Este arquivo não funciona com duplo clique (<code>file://</code>): o navegador bloqueia os módulos do app e a tela fica em branco.</p>' +
+          '<p><b>Desenvolvimento</b></p><pre>cd server &amp;&amp; npm i &amp;&amp; npm start\ncd client &amp;&amp; npm i &amp;&amp; npm run dev</pre><p>Depois acesse <code>http://localhost:5173</code>.</p>' +
+          '<p><b>Produção (um só endereço)</b></p><pre>cd client &amp;&amp; npm i &amp;&amp; npm run build\ncd ../server &amp;&amp; npm i &amp;&amp; npm start</pre><p>Depois acesse <code>http://localhost:3001</code>.</p>');
+        return;
+      }
+      // Se em 6 s nada foi desenhado, o script do app falhou: avisa em vez de deixar a página vazia.
+      setTimeout(function () {
+        if (document.getElementById('root').childElementCount) return;
+        show('<h1>Não foi possível iniciar o FireMap</h1>' +
+          '<p>O código do app não carregou. Verifique se o servidor do Vite está rodando (<code>npm run dev</code> em <code>client</code>) ' +
+          'ou se o build foi gerado (<code>npm run build</code>) e abra o endereço mostrado no terminal. Detalhes no console do navegador (F12).</p>');
+      }, 6000);
+    })();
+  </script>
+  <script type="module" src="src/main.jsx"></script>
+</body>
+</html>
