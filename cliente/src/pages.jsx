@@ -62,7 +62,7 @@ export function Alerts() {
 const TIPS = ['Quais extintores precisam de atenção?', 'Quais vencem nos próximos 60 dias?', 'Onde está localizado o extintor EXT-003?', 'Quais manutenções estão pendentes?'];
 export function Chat() {
   const [msgs, setMsgs] = useState([]); const [text, setText] = useState(''); const [busy, setBusy] = useState(false); const end = useRef();
-  useEffect(() => end.current?.scrollIntoView({ behavior: 'smooth' }), [msgs, busy]);
+  useEffect(() => { end.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs, busy]);
   const send = async t => {
     t = t.trim(); if (!t || busy) return;
     const next = [...msgs, { role: 'user', content: t }]; setMsgs(next); setText(''); setBusy(true);

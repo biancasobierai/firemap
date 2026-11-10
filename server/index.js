@@ -207,8 +207,10 @@ app.get('/api/alerts', wrap(async (_, res) => res.json((await all()).filter(e =>
 
 // ---------- Chat com IA (contexto = dados reais a cada pergunta) ----------
 app.post('/api/chat', wrap(async (req, res) => {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return res.status(503).json({ error: 'IA não configurada: defina ANTHROPIC_API_KEY em server/.env.' });
+  const key = process.env.AI_API_KEY;
+  const baseUrl = process.env.AI_BASE_URL?.replace(/\/+$/, '');
+  const model = process.env.AI_MODEL;
+  if (!key || !baseUrl || !model) return res.status(503).json({ error: 'IA não configurada: defina AI_BASE_URL, AI_API_KEY e AI_MODEL em server/.env.' });
   const messages = (req.body.messages || []).slice(-20).map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content) }));
   if (!messages.length || messages[0].role !== 'user') return res.status(400).json({ error: 'Mensagem inválida.' });
   const base = (await all()).map(({ code, type, location, planName, expiry, daysToExpiry, status, nextMaintenance, maintenancePending, alerts }) =>
@@ -217,14 +219,19 @@ app.post('/api/chat', wrap(async (req, res) => {
 Responda em português do Brasil, de forma clara e objetiva, usando SOMENTE os dados abaixo. Se faltar informação, diga isso. Cite sempre o código (EXT-000). "Próximo do vencimento" = vence em até ${WARN_DAYS} dias; "vencido" = validade anterior a hoje. Considere o histórico da conversa em perguntas de acompanhamento ("e no 1º andar?", "qual deles é mais urgente?"). Calcule prazos a partir de diasParaVencer.
 DADOS (JSON):
 ${JSON.stringify(base)}`;
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
+  const r = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6', max_tokens: 1000, system, messages }),
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+    body: JSON.stringify({ model, max_tokens: 1000, messages: [{ role: 'system', content: system }, ...messages] }),
   });
-  const j = await r.json();
-  if (!r.ok) return res.status(502).json({ error: j.error?.message || 'Falha ao consultar a IA.' });
-  res.json({ reply: j.content.filter(c => c.type === 'text').map(c => c.text).join('\n') });
+  const j = await r.json().catch(() => null);
+  if (!r.ok) {
+    const detail = j?.error?.message || j?.message || `${r.status} ${r.statusText}`;
+    return res.status(502).json({ error: `Falha ao consultar a IA (${r.status}): ${detail}` });
+  }
+  const reply = j.choices?.[0]?.message?.content;
+  if (typeof reply !== 'string' || !reply.trim()) return res.status(502).json({ error: 'A IA retornou uma resposta vazia.' });
+  res.json({ reply });
 }));
 
 // Erros fora das rotas (ex.: corpo grande demais) sempre em JSON
