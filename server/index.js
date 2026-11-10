@@ -34,7 +34,6 @@ const checkPw = (pw, stored) => {
 };
 const NO_USER = hashPw('x'); // mantém o tempo de resposta igual quando o e-mail não existe
 
-// Repositório de usuários (troque por banco real mantendo a interface)
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'admin@firemap.local').trim().toLowerCase();
 if (!process.env.ADMIN_PASSWORD) console.warn('[aviso] ADMIN_PASSWORD não definido: usando a senha de demonstração "admin123". Defina uma senha em server/.env.');
 const users = [{ id: '1', name: 'Administrador', email: ADMIN_EMAIL, passwordHash: hashPw(process.env.ADMIN_PASSWORD || 'admin123') }];
@@ -75,7 +74,7 @@ app.use('/api', (req, res, next) => {
 });
 app.get('/api/auth/me', (req, res) => res.json(publicUser(req.user)));
 
-// ---------- Repositórios (troque por banco real mantendo a interface) ----------
+
 const day = 86400000;
 const iso = n => new Date(Date.now() + n * day).toISOString().slice(0, 10);
 
