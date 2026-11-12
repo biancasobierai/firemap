@@ -1,53 +1,79 @@
-# firemap
-Amanda Rech, Bianca Sobierai e Mariana Borges
+# Como Rodar a Aplicação (Firemap)
 
- # Como abrir o FireMap
+Este guia contém o passo a passo para iniciar o **Backend (API)** e o **Frontend (Site)** localmente usando o Visual Studio Code.
 
-Este guia inicia o site no Codespaces para uso durante esta sessão. Mantenha os dois terminais abertos enquanto estiver usando o site.
+---
 
-## 1. Inicie o servidor da API
+## Pré-requisitos
 
-No VS Code, abra um terminal novo pelo botão **+**. Rode:
+* **Node.js** instalado na máquina.
+* **Visual Studio Code** aberto na pasta raiz do projeto (`firemap`).
 
+---
+
+## 1. Preparação Inicial (Apenas na primeira vez)
+
+### Liberar scripts no Windows (se der erro de permissão)
+Caso o terminal do VS Code bloqueie comandos `npm`, abra o **PowerShell como Administrador** no Windows e execute:
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+*(Digite `S` e pressione Enter para confirmar).*
+
+### Instalar as dependências
+Abra o terminal no VS Code (`Ctrl + '`) e instale os pacotes do projeto:
 ```bash
-cd /workspaces/firemap/firemap/firemap/server
 npm install
-npm run dev
+```
+*(Caso o frontend fique em uma subpasta separada, como `client` ou `frontend`, entre nela com `cd nome-da-pasta` e rode `npm install` novamente).*
+
+### Configurar a senha de administrador (Opcional)
+Para remover o aviso de senha padrão (`admin123`), crie ou edite o arquivo `.env` dentro da pasta `server` (`server/.env`) e adicione:
+```env
+ADMIN_PASSWORD=sua_nova_senha
+JWT_SECRET=sua_chave_secreta
 ```
 
-Deixe esse terminal aberto. A API deve informar que está rodando na porta `3001`.
+---
 
-## 2. Inicie o site
+## 2. Executando a Aplicação
 
-Abra outro terminal pelo botão **+** e rode:
+A aplicação precisa de **dois terminais abertos simultaneamente** no VS Code: um para a API e outro para a interface visual do site.
 
-```bash
-cd /workspaces/firemap/firemap/firemap/cliente
-npm install
-npm run dev
-```
+### Passo 1: Iniciar o Backend (Porta 3001)
+1. No terminal do VS Code (`Ctrl + '`), inicie o servidor da API:
+   ```bash
+   node index.js
+   ```
+   *(Ou `npm start` / `npm run server`, conforme configurado no `package.json`).*
+2. Aguarde o servidor iniciar na porta **3001** e **mantenha este terminal aberto**.
 
-Se `npm run dev` mostrar `Permission denied` ao executar o Vite, aprove o script do `esbuild` e tente novamente:
+### Passo 2: Iniciar o Frontend (Porta 5173)
+1. Clique no ícone **`+`** no canto superior direito do painel de terminal do VS Code para abrir um **segundo terminal**.
+2. Caso o site fique em uma pasta separada, entre nela (ex: `cd client`).
+3. Rode o comando de desenvolvimento:
+   ```bash
+   npm run dev
+   ```
+4. Aguarde aparecer o endereço local na porta **5173**.
 
-```bash
-npm install-scripts approve esbuild
-npm rebuild esbuild
-npm run dev
-```
+---
 
-## 3. Abra no navegador
+## 3. Acessar no Navegador
 
-No VS Code, abra a aba **Ports** e clique em **Open in Browser** na porta **5173**. Não abra a porta `3001`: ela é da API, não da página do site. Se aparecer `Cannot GET /`, provavelmente foi aberta a porta da API.
+1. Abra seu navegador (Chrome, Edge, etc.).
+2. Acesse exatamente o endereço do frontend:
+   👉 **http://localhost:5173**
 
-## 4. Entre no site
+> **⚠️ Atenção:** Não abra `http://localhost:3001` no navegador. A porta `3001` é exclusiva da API e exibirá `Cannot GET /` se acessada diretamente.
 
-Use os dados de demonstração:
+---
 
-- **E-mail:** `admin@firemap.local`
-- **Senha:** `admin123`
+## Solução de Problemas Comuns
 
-## Para usar depois
+### Erro `EADDRINUSE: address already in use :::3001`
+Significa que uma execução anterior da API ficou presa em segundo plano ocupando a porta `3001`. Para encerrar o processo travado, execute no terminal:
+* **No CMD:** `taskkill /F /IM node.exe`
+* **No PowerShell:** `Stop-Process -Name "node" -Force`
 
-Se fechar os terminais ou o Codespace parar, inicie novamente os dois comandos `npm run dev`. O site e a API precisam estar rodando ao mesmo tempo. Os dados de demonstração ficam na memória do servidor e podem ser apagados quando ele reiniciar; este procedimento não publica o site para acesso permanente em outro computador.
-
-Para parar os servidores, pressione **Ctrl+C** no terminal correspondente.
+Depois disso, repita os passos da seção **2. Executando a Aplicação**.
