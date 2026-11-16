@@ -2,6 +2,19 @@ import 'dotenv/config';
 import crypto from 'node:crypto';
 import express from 'express';
 import cors from 'cors';
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY;
+if (!supabaseUrl || !supabaseSecretKey) throw new Error('Configure SUPABASE_URL e SUPABASE_SECRET_KEY em server/.env.');
+const supabase = createClient(supabaseUrl, supabaseSecretKey, {
+  auth: { autoRefreshToken: false, persistSession: false },
+});
+let databaseReady = false;
+const dataOrThrow = ({ data, error }) => {
+  if (error) throw new Error(`Supabase: ${error.message}`);
+  return data;
+};
 
 const app = express();
 app.use(cors(), express.json({ limit: '12mb' })); // 12mb: comporta a imagem da planta enviada em base64
@@ -35,11 +48,17 @@ const checkPw = (pw, stored) => {
 const NO_USER = hashPw('x'); // mantém o tempo de resposta igual quando o e-mail não existe
 
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'admin@firemap.local').trim().toLowerCase();
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 if (!process.env.ADMIN_PASSWORD) console.warn('[aviso] ADMIN_PASSWORD não definido: usando a senha de demonstração "admin123". Defina uma senha em server/.env.');
-const users = [{ id: '1', name: 'Administrador', email: ADMIN_EMAIL, passwordHash: hashPw(process.env.ADMIN_PASSWORD || 'admin123') }];
 const usersRepo = {
-  byEmail: async email => users.find(u => u.email === email),
-  get: async id => users.find(u => u.id === id),
+  byEmail: async email => {
+    const user = dataOrThrow(await supabase.from('app_users').select('id,name,email,password_hash').eq('email', email).maybeSingle());
+    return user && { id: String(user.id), name: user.name, email: user.email, passwordHash: user.password_hash };
+  },
+  get: async id => {
+    const user = dataOrThrow(await supabase.from('app_users').select('id,name,email,password_hash').eq('id', id).maybeSingle());
+    return user && { id: String(user.id), name: user.name, email: user.email, passwordHash: user.password_hash };
+  },
 };
 const publicUser = u => ({ id: u.id, name: u.name, email: u.email });
 
@@ -51,7 +70,12 @@ const failed = ip => { const a = attempts.get(ip); (!a || a.reset <= Date.now())
 
 const wrap = fn => (req, res) => fn(req, res).catch(err => res.status(500).json({ error: err.message }));
 
+app.get('/api/health', (_req, res) => res.status(databaseReady ? 200 : 503).json({
+  api: 'ok', database: databaseReady ? 'connected' : 'unavailable',
+}));
+
 app.post('/api/auth/login', wrap(async (req, res) => {
+  if (!databaseReady) return res.status(503).json({ error: 'Banco indisponível. Verifique a configuração do Supabase.' });
   if (blocked(req.ip)) return res.status(429).json({ error: 'Muitas tentativas. Aguarde alguns minutos e tente novamente.' });
   const email = String(req.body.email || '').trim().toLowerCase(), password = String(req.body.password || '');
   const u = await usersRepo.byEmail(email);
@@ -63,6 +87,7 @@ app.post('/api/auth/login', wrap(async (req, res) => {
 
 // Tudo em /api abaixo desta linha exige login
 app.use('/api', (req, res, next) => {
+  if (!databaseReady) return res.status(503).json({ error: 'Banco indisponível. Verifique a configuração do Supabase.' });
   (async () => {
     const m = /^Bearer (.+)$/.exec(req.headers.authorization || '');
     let claims = null;
@@ -83,21 +108,26 @@ const sketch = rooms => 'data:image/svg+xml;base64,' + Buffer.from(
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60" width="1000" height="600"><rect width="100" height="60" fill="#fff"/>` +
   `<rect x=".5" y=".5" width="99" height="59" fill="none" stroke="#22262b" stroke-width="1"/>` +
   rooms.map(r => `<rect x="${r[0]}" y="${r[1]}" width="${r[2]}" height="${r[3]}" fill="#f3f4f6" stroke="#6b7280" stroke-width=".4"/>`).join('') + `</svg>`).toString('base64');
-let pseq = 2;
-let plans = [
-  { id: '1', name: 'Térreo', image: sketch([[2, 2, 36, 56], [38, 2, 24, 56], [62, 2, 36, 28], [62, 30, 36, 28]]) },
-  { id: '2', name: '1º andar', image: sketch([[2, 2, 30, 56], [32, 2, 36, 30], [32, 32, 36, 26], [68, 2, 30, 56]]) },
+const defaultPlans = [
+  { name: 'Térreo', image: sketch([[2, 2, 36, 56], [38, 2, 24, 56], [62, 2, 36, 28], [62, 30, 36, 28]]) },
+  { name: '1º andar', image: sketch([[2, 2, 30, 56], [32, 2, 36, 30], [32, 32, 36, 26], [68, 2, 30, 56]]) },
 ];
+const fromPlan = plan => ({ ...plan, id: String(plan.id) });
 const plansRepo = {
-  list: async () => plans,
-  get: async id => plans.find(p => p.id === id),
-  create: async p => { const n = { ...p, id: String(++pseq) }; plans.push(n); return n; },
-  update: async (id, p) => { const i = plans.findIndex(x => x.id === id); if (i < 0) return null; plans[i] = { ...plans[i], ...p, id }; return plans[i]; },
-  remove: async id => { const n = plans.length; plans = plans.filter(p => p.id !== id); return plans.length < n; },
+  list: async () => dataOrThrow(await supabase.from('plans').select('*').order('id')).map(fromPlan),
+  get: async id => {
+    const plan = dataOrThrow(await supabase.from('plans').select('*').eq('id', id).maybeSingle());
+    return plan && fromPlan(plan);
+  },
+  create: async plan => fromPlan(dataOrThrow(await supabase.from('plans').insert(plan).select('*').single())),
+  update: async (id, plan) => {
+    const updated = dataOrThrow(await supabase.from('plans').update(plan).eq('id', id).select('*').maybeSingle());
+    return updated && fromPlan(updated);
+  },
+  remove: async id => (dataOrThrow(await supabase.from('plans').delete().eq('id', id).select('id'))).length > 0,
 };
 
-let seq = 12;
-let data = [
+const demoExtinguishers = [
   ['PQS 6kg', 'Recepção', 0, 12, 50, 200, 20, false],
   ['CO2 6kg', 'Sala de servidores', 0, 30, 20, 45, -10, true],
   ['ABC 4kg', 'Corredor principal', 0, 50, 50, 20, 100, false],
@@ -110,15 +140,54 @@ let data = [
   ['Água 10L', 'Arquivo', 1, 80, 25, -40, -60, false],
   ['CO2 6kg', 'Laboratório', 1, 82, 75, 70, 15, false],
 ].map((r, i) => ({
-  id: String(i + 1), code: `EXT-${String(i + 1).padStart(3, '0')}`, type: r[0], location: r[1],
+  code: `EXT-${String(i + 1).padStart(3, '0')}`, type: r[0], location: r[1],
   planId: String(r[2] + 1), x: r[3], y: r[4], expiry: iso(r[5]), nextMaintenance: iso(r[6]), maintenancePending: r[7],
 }));
+const fromExtinguisher = item => ({
+  id: String(item.id), code: item.code, type: item.type, location: item.location,
+  planId: String(item.plan_id), x: Number(item.x), y: Number(item.y), expiry: item.expiry,
+  nextMaintenance: item.next_maintenance, maintenancePending: item.maintenance_pending,
+});
+const toExtinguisher = item => {
+  const row = {
+    type: item.type, location: item.location, plan_id: Number(item.planId), x: item.x, y: item.y,
+    expiry: item.expiry, next_maintenance: item.nextMaintenance, maintenance_pending: item.maintenancePending,
+  };
+  if (item.code) row.code = item.code;
+  return row;
+};
 const repo = {
-  list: async () => data,
-  get: async id => data.find(e => e.id === id),
-  create: async e => { const n = { ...e, id: String(++seq) }; n.code ||= `EXT-${String(seq).padStart(3, '0')}`; data.push(n); return n; },
-  update: async (id, e) => { const i = data.findIndex(x => x.id === id); if (i < 0) return null; data[i] = { ...data[i], ...e, id }; return data[i]; },
-  remove: async id => { const n = data.length; data = data.filter(e => e.id !== id); return data.length < n; },
+  list: async () => dataOrThrow(await supabase.from('extinguishers').select('*').order('id')).map(fromExtinguisher),
+  get: async id => {
+    const item = dataOrThrow(await supabase.from('extinguishers').select('*').eq('id', id).maybeSingle());
+    return item && fromExtinguisher(item);
+  },
+  create: async item => fromExtinguisher(dataOrThrow(await supabase.from('extinguishers').insert(toExtinguisher(item)).select('*').single())),
+  update: async (id, item) => {
+    const updated = dataOrThrow(await supabase.from('extinguishers').update(toExtinguisher(item)).eq('id', id).select('*').maybeSingle());
+    return updated && fromExtinguisher(updated);
+  },
+  remove: async id => (dataOrThrow(await supabase.from('extinguishers').delete().eq('id', id).select('id'))).length > 0,
+};
+
+const initializeDatabase = async () => {
+  const plans = dataOrThrow(await supabase.from('plans').select('id').limit(1));
+  if (!plans.length) {
+    const insertedPlans = dataOrThrow(await supabase.from('plans').insert(defaultPlans).select('id,name'));
+    const planIds = new Map(insertedPlans.map(plan => [plan.name, String(plan.id)]));
+    const demoRows = demoExtinguishers.map(item => ({
+      ...item,
+      planId: planIds.get(item.planId === '1' ? 'Térreo' : '1º andar'),
+    }));
+    dataOrThrow(await supabase.from('extinguishers').insert(demoRows.map(toExtinguisher)));
+  }
+
+  const admin = await usersRepo.byEmail(ADMIN_EMAIL);
+  if (!admin) {
+    dataOrThrow(await supabase.from('app_users').insert({
+      name: 'Administrador', email: ADMIN_EMAIL, password_hash: hashPw(ADMIN_PASSWORD),
+    }));
+  }
 };
 
 // ---------- Regras de negócio ----------
@@ -236,4 +305,13 @@ ${JSON.stringify(base)}`;
 // Erros fora das rotas (ex.: corpo grande demais) sempre em JSON
 app.use((err, _req, res, _next) => res.status(err.status || 500).json({ error: err.type === 'entity.too.large' ? 'Arquivo muito grande.' : err.message }));
 
-app.listen(process.env.PORT || 3001, () => console.log('FireMap API em http://localhost:' + (process.env.PORT || 3001)));
+const port = process.env.PORT || 3001;
+app.listen(port, () => {
+  console.log('FireMap API em http://localhost:' + port);
+  initializeDatabase().then(() => {
+    databaseReady = true;
+    console.log('[info] Supabase conectado.');
+  }).catch(error => {
+    console.error(`[aviso] Supabase indisponível: ${error.message}`);
+  });
+});
